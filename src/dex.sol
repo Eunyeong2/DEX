@@ -17,11 +17,6 @@ contract DEXsol is IERC20, ERC20 {
 
     uint public k; //reserve0*reserve1 (x*y=k)
 
-    uint256 private _totalSupply;
-    uint256 private _LpAmount;
-    
-    uint public constant MINIMUM_LIQUIDITY = 10**3;
-
     uint private unlocked = 1;
     
     constructor(address _token0, address _token1) ERC20("Eunong LPToken", "LPT") { 
@@ -62,7 +57,7 @@ contract DEXsol is IERC20, ERC20 {
 
     function _swap(address I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum ) internal returns (uint256 outputAmount){
         require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero"); //I_Token -> O_Token, I_Amount 만큼. O_Amount는 0
-
+        require(IERC20(I_Token).balanceOf(address(this)) >= I_Amount, "I_Token's balance is over the I_Amount");
         uint __reserve0 = IERC20(I_Token).balanceOf(address(this));
         uint __reserve1 = IERC20(O_Token).balanceOf(address(this));
 
