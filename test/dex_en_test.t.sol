@@ -42,9 +42,9 @@ contract DexEnTest is Test{
 
     function testFirstAddLiquidity() public {
         vm.startPrank(spring);
-        token1.approve(address(Dex1), 100);
+        token1.approve(address(Dex1), 200);
         //vm.prank(spring);
-        token2.approve(address(Dex1), 100);
+        token2.approve(address(Dex1), 200);
         
         Dex1.addLiquidity(100, 100, 0);
 
@@ -77,7 +77,10 @@ contract DexEnTest is Test{
     
     function testSwap() public{
         testFirstAddLiquidity();
-        
+        //vm.prank(spring);
+        Dex1.swap(50, 0, 0);
+        assertEq(token1.balanceOf(address(spring)), 50);
+        assertEq(token2.balanceOf(address(spring)), 134);
     }
     receive() external payable {}
 }

@@ -48,19 +48,19 @@ contract DEXsol is IERC20, ERC20 {
             address O_Token = token1;
             uint256 I_Amount = tokenXAmount;
             uint256 O_Amount = tokenYAmount;
-            require(I_Amount > IERC20(token0).balanceOf(address(this)), "tokenXAmount exceeds X's reserve amount");
+            require(I_Amount <= IERC20(token0).balanceOf(address(this)), "tokenXAmount exceeds X's reserve amount");
             _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
         } else{ //tokenXAmount가 0일 때, token0으로 스왑
             address I_Token = token1;
             address O_Token = token0;
             uint256 I_Amount = tokenYAmount;
             uint256 O_Amount = tokenXAmount;
-            require(O_Amount > IERC20(token1).balanceOf(address(this)), "tokenYAmount exceeds Y's reserve amount");
+            require(O_Amount <= IERC20(token1).balanceOf(address(this)), "tokenYAmount exceeds Y's reserve amount");
             _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
         }
     }
 
-    function _swap(address I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum ) internal lock returns (uint256 outputAmount){
+    function _swap(address I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum ) internal returns (uint256 outputAmount){
         require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero"); //I_Token -> O_Token, I_Amount 만큼. O_Amount는 0
 
         uint __reserve0 = IERC20(I_Token).balanceOf(address(this));
@@ -68,12 +68,11 @@ contract DEXsol is IERC20, ERC20 {
 
 
         uint amount; // 수수료 
-        amount = I_Amount * 1/10;
-        uint amount0;
-        uint amount1;
-        I_Amount = I_Amount - amount0;
+        amount = I_Amount * 1/1000; //수수료
+        I_Amount = I_Amount - amount; //I_Amount - 수수료
 
-        IERC20(O_Token).transfer(msg.sender, __reserve1 - k / amount0); //swap 할 때 생기는 가격 변동으로 인해 빠지는 금액
+
+        IERC20(O_Token).transfer(msg.sender, __reserve1 - k / (__reserve0 + I_Amount)); //swap 할 때 생기는 가격 변동으로 인해 빠지는 금액
         IERC20(I_Token).transferFrom(msg.sender, address(this), I_Amount); //수수료 뺀 토큰 주기
 
         require(O_Amount >= minimum, "outputAmount is under minimum");
