@@ -7,13 +7,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./Math.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20Mintable.sol";
 
-contract DEXsol is IERC20, ERC20, ERC20Mintable {
-    address public factory;
+contract DEXsol is IERC20, ERC20 {
+
     address public token0;
     address public token1;
 
-    uint112 private reserve0;
-    uint112 private reserve1;
+    uint256 private reserve0;
+    uint256 private reserve1;
 
     uint public k; //reserve0*reserve1 (x*y=k)
 
@@ -24,12 +24,16 @@ contract DEXsol is IERC20, ERC20, ERC20Mintable {
 
     uint private unlocked = 1;
     
-    constructor(string memory _token0, string memory _token1) ERC20("Eunong LPToken", "LPT") { 
+    constructor(address _token0, address _token1) ERC20("Eunong LPToken", "LPT") { 
         token0 = _token0;
         token1 = _token1;
-        factory = msg.sender;
     }
     
+    function getReserves() public view returns (uint256 _reserve0, uint256 _reserve1) {
+        _reserve0 = reserve0;
+        _reserve1 = reserve1;
+    }
+
     modifier lock() {
         require(unlocked == 1, 'LOCKED');
         unlocked = 0;
@@ -37,115 +41,108 @@ contract DEXsol is IERC20, ERC20, ERC20Mintable {
         unlocked = 1;
     }
 
-    //event Mint(address indexed sender, uint amount0, uint amount1);
-    //event Burn(address indexed sender, uint amount0, uint amount1, address indexed to);
-    //event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to);
-    
+
     function swap(uint256 tokenXAmount, uint256 tokenYAmount, uint256 tokenMinimumOutputAmount) external lock {
         if (tokenXAmount > tokenYAmount){ //tokenYAmount가 0일 때, token1로 스왑
             address I_Token = token0;
             address O_Token = token1;
             uint256 I_Amount = tokenXAmount;
             uint256 O_Amount = tokenYAmount;
-            require(I_Amount > reserve0, "tokenXAmount exceeds X's reserve amount");
+            require(I_Amount > IERC20(token0).balanceOf(address(this)), "tokenXAmount exceeds X's reserve amount");
             _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
         } else{ //tokenXAmount가 0일 때, token0으로 스왑
             address I_Token = token1;
             address O_Token = token0;
             uint256 I_Amount = tokenYAmount;
             uint256 O_Amount = tokenXAmount;
-            require(O_Amount > reserve1, "tokenXAmount exceeds Y's reserve amount");
+            require(O_Amount > IERC20(token1).balanceOf(address(this)), "tokenYAmount exceeds Y's reserve amount");
             _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
         }
     }
 
     function _swap(address I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum ) internal lock returns (uint256 outputAmount){
-        require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero");
+        require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero"); //I_Token -> O_Token, I_Amount 만큼. O_Amount는 0
 
-        uint reserve0 = IERC20(I_Token).balanceOf(address(this));
-        uint reserve1 = IERC20(O_Token).balanceOf(address(this));
+        uint __reserve0 = IERC20(I_Token).balanceOf(address(this));
+        uint __reserve1 = IERC20(O_Token).balanceOf(address(this));
 
-        //uint112 n_token1;
-        //uint112 n_token2;
-        uint256 exper; //exchange percentage
-        exper = reserve0 / (reserve1 + O_Amount);
-        
-        transfer(address(I_Token), I_Amount); // I_token에 수수료 빼고 전송
-        //transfer(address(this), tokenYmount); // lq pool에 token 넣기
-        transferFrom(I_Token, address(this), (I_Amount - I_Amount/10)); // 수수료 납부
-        transfer(address(O_Token), (O_Amount - O_Amount/10));
 
+        uint amount; // 수수료 
+        amount = I_Amount * 1/10;
+        uint amount0;
+        uint amount1;
+        I_Amount = I_Amount - amount0;
+
+        IERC20(O_Token).transfer(msg.sender, __reserve1 - k / amount0); //swap 할 때 생기는 가격 변동으로 인해 빠지는 금액
+        IERC20(I_Token).transferFrom(msg.sender, address(this), I_Amount); //수수료 뺀 토큰 주기
+
+        require(O_Amount >= minimum, "outputAmount is under minimum");
+        outputAmount = O_Amount;
     }
 
-    function addLiquidity(uint256 tokenXAmount, uint256 tokenYAmount, uint256 minimumLPTokenAmount) external lock {
-        //require(tokenXAmount)
-        //require(token1.transferFrom(msg.sender, address(this), tokenXAmount), "Transfer of token1 failed");
-        //require(token2.transferFrom(msg.sender, address(this), tokenYAmount), "Transfer of token2 failed");
-        //require(tokenXAmount > balanceof(msg.sender), "Exceeded tokenXAmount");
-        if (tokenXAmount > tokenYAmount){ //tokenYAmount가 0일 때, token1로 스왑
-            address I_Token = token0;
-            address O_Token = token1;
-            uint256 I_Amount = tokenXAmount;
-            uint256 O_Amount = tokenYAmount;
-            _addLiquidity(I_Token, O_Token, I_Amount, O_Amount, minimumLPTokenAmount);
-        } else{ //tokenXAmount가 0일 때, token0으로 스왑
-            address I_Token = token1;
-            address O_Token = token0;
-            uint256 I_Amount = tokenYAmount;
-            uint256 O_Amount = tokenXAmount;
-            _addLiquidity(I_Token, O_Token, I_Amount, O_Amount);
-        }
+
+    function quote(uint amountA, uint reserveA, uint reserveB) internal pure returns (uint amountB) {
+        require(amountA > 0, 'INSUFFICIENT_AMOUNT');
+        require(reserveA > 0 && reserveB > 0, 'INSUFFICIENT_LIQUIDITY');
+        amountB = (amountA*reserveB) / reserveA;
     }
 
-    function _addLiquidity(uint256 I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum) internal lock returns (uint LPTokenAmount){
-        require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero");
-        //LPTokenAmount = mint(msg.sender); //lp token 새로 mint
-        
-        uint reserve0 = IERC20(I_Token).balanceOf(address(this));
-        uint reserve1 = IERC20(O_Token).balanceOf(address(this));
+    function addLiquidity(uint256 tokenXAmount, uint256 tokenYAmount, uint256 minimumLPTokenAmount) external lock returns(uint LPTokenAmount) {
+        require(IERC20(token0).balanceOf(msg.sender) >= tokenXAmount, "Checking balances");
+        require(IERC20(token1).balanceOf(msg.sender) >= tokenYAmount, "Checking balances");
+        uint __reserve0 = IERC20(token0).balanceOf(address(this));
+        uint __reserve1 = IERC20(token1).balanceOf(address(this));
+        uint amount0;
+        uint amount1;
 
-        k = (reserve0+I_Amount) * (reserve1+O_Amount);
-
-        _totalSupply = totalSupply();
-
-        if (_totalSupply == 0){
-            _LpAmount = Math.sqrt(I_Amount.mul(O_Amount)).sub(MINIMUM_LIQUIDITY);
+        if (__reserve0 == 0 && __reserve1 == 0){ //처음 토큰을 넣을 때
+            require(tokenXAmount/tokenYAmount == 1, "The proportion is broken"); //비율을 1:1로 넣게 설정
+            (amount0, amount1) = (tokenXAmount, tokenYAmount);
         } else{
-            _LpAmount = Math.min(I_Amount.mul(_totalSupply) / reserve0, O_Amount.mul(_totalSupply) / reserve1 );
+            uint amountBO = quote(tokenXAmount, __reserve0, __reserve1); //비율 다시 계산
+            if (amountBO <= tokenYAmount){ // 넣으려고 하는 Y token의 양이 비율과 맞지 않을 때
+                require(amountBO >= minimumLPTokenAmount, 'INSUFFICIENT_B_AMOUNT');
+                (amount0, amount1) = (tokenXAmount, amountBO); // 비율에 맞게 줄여버리기
+            } else{
+                uint amountAO = quote(tokenYAmount, __reserve1, __reserve0); // 넣으려는 X token의 양이 비율과 맞지 않을 때
+                assert(amountAO <= tokenXAmount);
+                require(amountAO >= minimumLPTokenAmount, 'INSUFFICIENT_A_AMOUNT');
+                (amount0, amount1) = (amountAO, tokenYAmount); // 비율에 맞게 줄여버리기
+            }
         }
-        
-        require(_LpAmount > 0, "LpAmount is zero");
-        require(_LpAmount > minimum, "Lack of LPTokenAmount");
-        _mint(address(this), _LpAmount);
-        LPTokenAmount = _LpAmount;
-        k = reserve0 * reserve1;
-        //emit Mint(msg.sender, I_Amount, O_Amount);
+
+        IERC20(token0).transferFrom(msg.sender, address(this), amount0);
+        IERC20(token1).transferFrom(msg.sender, address(this), amount1);
+
+        k = (__reserve0 + amount0) * (__reserve1 + amount1);
+
+        if (totalSupply() == 0){ // 아직 발행 된 lp 토큰이 없을 때
+            LPTokenAmount = Math.sqrt(amount0*amount1); // 루트 k의 값으로 설정
+        } else{
+            LPTokenAmount = Math.min(amount0*totalSupply() / __reserve0, amount1*totalSupply() / __reserve1);
+        }
+
+        require(LPTokenAmount > 0, "LPTokenAMount is under zero");
+        require(LPTokenAmount >= minimumLPTokenAmount, "LPTokenAmount is under minimumLPTokenAmount");
+        _mint(msg.sender, LPTokenAmount);
     }
 
     function removeLiquidity(uint256 LPTokenAmount, uint256 minimumTokenXAmount, uint256 minimumTokenYAmount) external lock {
-        //(uint112 _reserve0, uint112 _reserve1,) = getReserves();
-        uint reserve0 = IERC20(token0).balanceOf(address(this)); //pool에 있는 token 개수
-        uint reserve1 = IERC20(token1).balanceOf(address(this));
-        uint liquidity = balanceOf[address(this)]; // liquidity
-
-        uint _totalSupply = totalSupply(); //총 lptoken 개수
-        uint amount0 = liquidity.mul(reserve0) / _totalSupply; //lptoken 만큼 수수료를 나눠줌
-        uint amount1 = liquidity.mul(reserve1) / _totalSupply;
+        require(LPTokenAmount <= totalSupply(), "TotalSupply is under LPTokenAmount");
+        uint __reserve0 = IERC20(token0).balanceOf(address(this));
+        uint __reserve1 = IERC20(token1).balanceOf(address(this));
         
-        require(amount0 > 0 && amount1 > 0, "INSUFFICIENT_LIQUIDITY_REMOVED");
-        _burn(address(this), liquidity);
-        transfer(token0, LPTokenAmount);
-        transfer(token1, LPTokenAmount);
+        uint amount0 = (LPTokenAmount*__reserve0) / totalSupply(); //가지고 있는 lptoken 만큼 수수료를 나눠줌
+        uint amount1 = (LPTokenAmount*__reserve1) / totalSupply();
+        
+        require(amount0 > 0 && amount1 > 0, "Insufficient liquidity removed");
+        require(amount0 > minimumTokenXAmount && amount1 > minimumTokenYAmount, "Amount is under minimum");
 
-        reserve0 = IERC20(token0).balanceOf(address(this));
-        reserve1 = IERC20(token1).balanceOf(address(this));
+        _burn(msg.sender, LPTokenAmount);
 
-        //_update(balance0, balance1, _reserve0, _reserve1);
-        //emit Burn(msg.sender, amount0, amount1, to);
+        IERC20(token0).transfer(msg.sender, amount0);
+        IERC20(token1).transfer(msg.sender, amount1);
+
+        k = (__reserve0 - amount0) * (__reserve1 - amount1);
     }
-
-    //function transfer(address to, uint256 lpAmount) external returns (bool){
-    //    transfer( msg.sender, to, lpAmount);
-    //    return true;
-    //}
 }
