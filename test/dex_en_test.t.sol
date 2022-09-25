@@ -27,17 +27,6 @@ contract DexEnTest is Test{
         token1.mint(spring, 200);
         token2.mint(spring, 200);
 
-        token1.mint(summer, 300);
-        token2.mint(summer, 50);
-
-        token1.mint(fall, 200);
-        token2.mint(fall, 0);
-
-        token1.mint(winter, 0);
-        token2.mint(winter, 200);
-        
-        token1.mint(hee, 0);
-        token2.mint(hee, 0);
     }
 
     function testFirstAddLiquidity() public {
