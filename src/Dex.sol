@@ -29,40 +29,49 @@ contract Dex is ERC20 {
         external
         returns (uint256 outputAmount)
     {
+        address I_Token;
+        address O_Token;
+        uint256 I_Amount;
+        uint256 O_Amount;
+
         if (tokenXAmount > tokenYAmount){ //tokenYAmount가 0일 때, _tokenY로 스왑
-            address I_Token = address(_tokenX);
-            address O_Token = address(_tokenY);
-            uint256 I_Amount = tokenXAmount;
-            uint256 O_Amount = tokenYAmount;
-            require(I_Amount <= IERC20(_tokenX).balanceOf(address(this)), "tokenXAmount exceeds X's reserve amount");
-            outputAmount = _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
+            I_Token = address(_tokenX);
+            O_Token = address(_tokenY);
+            I_Amount = tokenXAmount;
+            O_Amount = tokenYAmount;
         } else{ //tokenXAmount가 0일 때, _tokenX으로 스왑
-            address I_Token = address(_tokenY);
-            address O_Token = address(_tokenX);
-            uint256 I_Amount = tokenYAmount;
-            uint256 O_Amount = tokenXAmount;
-            require(O_Amount <= IERC20(_tokenY).balanceOf(address(this)), "tokenYAmount exceeds Y's reserve amount");
-            outputAmount = _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
+            I_Token = address(_tokenY);
+            O_Token = address(_tokenX);
+            I_Amount = tokenYAmount;
+            O_Amount = tokenXAmount;
         }
+
+        outputAmount = _swap(I_Token, O_Token, I_Amount, O_Amount, tokenMinimumOutputAmount);
+
     }
 
     function _swap(address I_Token, address O_Token, uint256 I_Amount, uint256 O_Amount, uint256 minimum ) internal returns (uint256 outputAmount){
         require(I_Amount != 0 && O_Amount == 0, "One token is must to be zero"); //I_Token -> O_Token, I_Amount 만큼. O_Amount는 0
-        require(IERC20(I_Token).balanceOf(address(this)) >= I_Amount, "I_Token's balance is over the I_Amount");
         uint __reserve0 = IERC20(I_Token).balanceOf(address(this));
         uint __reserve1 = IERC20(O_Token).balanceOf(address(this));
 
 
-        uint amount; // 수수료 
-        amount = I_Amount * 1/1000; //수수료
-        I_Amount = I_Amount - amount; //I_Amount - 수수료
+        uint fee; // 수수료 
+        fee = I_Amount * 1/1000; //수수료
+        I_Amount = I_Amount - fee; //I_Amount - 수수료
 
-        outputAmount = __reserve1 - k / (__reserve0 + I_Amount);
+        if ( (k % (__reserve0+I_Amount)) != 0){
+            outputAmount = __reserve1 - ((k / (__reserve0 + I_Amount)) + 1);
+        } else{
+            outputAmount = __reserve1 - (k / (__reserve0 + I_Amount));
+        }
 
         IERC20(O_Token).transfer(msg.sender, outputAmount); //swap 할 때 생기는 가격 변동으로 인해 빠지는 금액
-        IERC20(I_Token).transferFrom(msg.sender, address(this), I_Amount+amount); //수수료 뺀 토큰 주기
+        IERC20(I_Token).transferFrom(msg.sender, address(this), I_Amount+fee); //수수료 뺀 토큰 주기
 
         require(O_Amount >= minimum, "outputAmount is under minimum");
+
+        k = (__reserve0 + I_Amount)*(__reserve1 + O_Amount);
     }
 
     function quote(uint amountA, uint reserveA, uint reserveB) internal pure returns (uint amountB) {
@@ -83,17 +92,14 @@ contract Dex is ERC20 {
         uint amount1 = tokenYAmount;
 
          if ( totalSupply() == 0){ //처음 토큰을 넣을 때
-             //require(tokenXAmount/tokenYAmount == 1, "The proportion is broken"); //비율을 1:1로 넣게 설정
              (amount0, amount1) = (tokenXAmount, tokenYAmount);
          } else{
             uint amountBO = quote(tokenXAmount, __reserve0, __reserve1); //비율 다시 계산
             if (amountBO <= tokenYAmount){ // 넣으려고 하는 Y token의 양이 비율과 맞지 않을 때
-                require(amountBO >= minimumLPTokenAmount, 'INSUFFICIENT_B_AMOUNT');
                 (amount0, amount1) = (tokenXAmount, amountBO); // 비율에 맞게 줄여버리기
             } else{
                 uint amountAO = quote(tokenYAmount, __reserve1, __reserve0); // 넣으려는 X token의 양이 비율과 맞지 않을 때
                 assert(amountAO <= tokenXAmount);
-                require(amountAO >= minimumLPTokenAmount, 'INSUFFICIENT_A_AMOUNT');
                 (amount0, amount1) = (amountAO, tokenYAmount); // 비율에 맞게 줄여버리기
             }
         }
@@ -130,7 +136,7 @@ contract Dex is ERC20 {
         transferY = (LPTokenAmount*__reserve1) / totalSupply();
         
         require(transferX > 0 && transferY > 0, "Insufficient liquidity removed");
-        require(transferX > minimumTokenXAmount && transferY > minimumTokenYAmount, "Amount is under minimum");
+        require(transferX >= minimumTokenXAmount && transferY >= minimumTokenYAmount, "Amount is under minimum");
 
         _burn(msg.sender, LPTokenAmount);
 
